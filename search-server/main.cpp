@@ -60,8 +60,8 @@ public:
     void AddDocument(int document_id, const string& document) {
         const vector<string> words = SplitIntoWordsNoStop(document);
         const int words_size = words.size();
+        double TF = 1.0 * 1 / words_size;
         for (const auto& word : words) {
-            double TF = 1.0 * 1/words_size;
             index_[word][document_id] += TF;
         }
         documents_count_++;
@@ -116,11 +116,10 @@ private:
         for (const auto& word : query_words) {
             if (index_.count(word) != 0) {
                 int word_doc_count = index_.at(word).size();
-                double IDF = log(1.0 * documents_count_/word_doc_count);
-                for (const auto& id : index_.at(word)) {
-                    double TF = id.second;
+                double IDF = log(1.0 * documents_count_ / word_doc_count);
+                for (const auto& [id, TF] : index_.at(word)) {
                     double word_relevance = TF * IDF;
-                    doc_relevance[id.first] += word_relevance;
+                    doc_relevance[id] += word_relevance;
                 }
             }
         }
