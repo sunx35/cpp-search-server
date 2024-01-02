@@ -96,14 +96,8 @@ public:
         return matched_documents;
     }
 
-    vector<Document> FindTopDocuments(const string& raw_query) const {
-        return FindTopDocuments(raw_query, [](int id, DocumentStatus status, int rating) {
-            return status == DocumentStatus::ACTUAL;
-        });
-    }
-
     vector<Document> FindTopDocuments(const string& raw_query,
-                                      DocumentStatus doc_status) const {
+                                      DocumentStatus doc_status = DocumentStatus::ACTUAL) const {
         return FindTopDocuments(raw_query, [doc_status](int id, DocumentStatus status, int rating) {
             return doc_status == status;
         });
