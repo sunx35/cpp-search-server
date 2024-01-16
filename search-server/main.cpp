@@ -2,7 +2,7 @@
 #include <cmath>
 #include <iostream>
 #include <map>
-#include <optional>
+#include <numeric>
 #include <set>
 #include <string>
 #include <utility>
@@ -11,6 +11,7 @@
 using namespace std;
 
 const int MAX_RESULT_DOCUMENT_COUNT = 5;
+const double EPSILON = 1e-6;
 
 string ReadLine() {
     string s;
@@ -82,10 +83,10 @@ public:
     template <typename StringContainer>
     explicit SearchServer(const StringContainer& stop_words)
         : stop_words_(MakeUniqueNonEmptyStrings(stop_words)) {
-            for (const string& str : stop_words_) {
-                if (!IsValidWord(str)) {
-                    throw invalid_argument("Using special symbols while adding stop-words");
-                }
+            if (any_of(stop_words_.begin(), stop_words_.end(), [] (const string& str) {
+                return !IsValidWord(str);
+            })) {
+                throw invalid_argument("Using special symbols while adding stop-words");
             }
     }
 
@@ -112,36 +113,22 @@ public:
             word_to_document_freqs_[word][document_id] += inv_word_count;
         }
         documents_.emplace(document_id, DocumentData{ComputeAverageRating(ratings), status});
+        document_ids_.push_back(document_id);
     }
 
     template <typename DocumentPredicate>
     vector<Document> FindTopDocuments(const string& raw_query,
                           DocumentPredicate document_predicate) const {
-        if (!IsValidWord(raw_query)) {
-            throw invalid_argument("Unacceptable symbols while document searching");
-        }
-
         const Query query = ParseQuery(raw_query);
-
-        // проверка на двойной знак минус ('--') в запросе
-        for (const string& str : query.minus_words) {
-            if (str[0] == '-') {
-                throw invalid_argument("Two minus signs (\"--\") while entering minus-words");
-            }
-            if (str.empty()) {
-                throw invalid_argument("Empty minus word is unacceptable");
-            }
-        }
 
         auto matched_documents = FindAllDocuments(query, document_predicate);
 
         sort(matched_documents.begin(), matched_documents.end(),
              [](const Document& lhs, const Document& rhs) {
-                 if (abs(lhs.relevance - rhs.relevance) < 1e-6) {
+                 if (abs(lhs.relevance - rhs.relevance) < EPSILON) {
                      return lhs.rating > rhs.rating;
-                 } else {
-                     return lhs.relevance > rhs.relevance;
                  }
+                 return lhs.relevance > rhs.relevance;
              });
         if (matched_documents.size() > MAX_RESULT_DOCUMENT_COUNT) {
             matched_documents.resize(MAX_RESULT_DOCUMENT_COUNT);
@@ -166,21 +153,7 @@ public:
 
     tuple<vector<string>, DocumentStatus> MatchDocument(const string& raw_query,
                                      int document_id) const {
-        if (!IsValidWord(raw_query)) {
-            throw invalid_argument("Unacceptable symbols while document searching");
-        }
-
         const Query query = ParseQuery(raw_query);
-
-        // проверка на двойной знак минус ('--') в запросе
-        for (const string& str : query.minus_words) {
-            if (str[0] == '-') {
-                throw invalid_argument("Two minus signs (\"--\") while entering minus-words");
-            }
-            if (str.empty()) {
-                throw invalid_argument("Empty minus word is unacceptable");
-            }
-        }
 
         vector<string> matched_words;
         for (const string& word : query.plus_words) {
@@ -204,12 +177,8 @@ public:
     }
 
     int GetDocumentId(int index) const {
-        int i = 0;
-        for (const auto& doc : documents_) {
-            if (i == index) {
-                return doc.first;
-            }
-            ++i;
+        if (index >= 0 && index < document_ids_.size()) {
+            return document_ids_.at(index);
         }
         throw out_of_range("Unacceptable value for index: out of range");
     }
@@ -222,6 +191,7 @@ private:
     const set<string> stop_words_;
     map<string, map<int, double>> word_to_document_freqs_;
     map<int, DocumentData> documents_;
+    vector<int> document_ids_;
 
     static bool IsValidWord(const string& word) {
         // A valid word must not contain special characters
@@ -248,10 +218,7 @@ private:
         if (ratings.empty()) {
             return 0;
         }
-        int rating_sum = 0;
-        for (const int rating : ratings) {
-            rating_sum += rating;
-        }
+        int rating_sum = accumulate(ratings.begin(), ratings.end(), 0);
         return rating_sum / static_cast<int>(ratings.size());
     }
 
@@ -262,6 +229,15 @@ private:
     };
 
     QueryWord ParseQueryWord(string text) const {
+        if (!IsValidWord(text)) {
+            throw invalid_argument("Unacceptable symbols while document searching");
+        }
+        if (text.substr(0, 2) == "--") {
+            throw invalid_argument("Two minus signs (\"--\") while entering minus-words");
+        }
+        if (text == "-") {
+            throw invalid_argument("Empty minus word is unacceptable");
+        }
         bool is_minus = false;
         // Word shouldn't be empty
         if (text[0] == '-') {
